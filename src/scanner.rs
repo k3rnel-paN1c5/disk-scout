@@ -7,7 +7,7 @@ use std::path::Path;
 
 /// Represents a node in the file system tree.
 /// It can be either a file or a directory, and it owns its data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileSystemNode {
     /// The name of the file or directory (e.g., "src", "main.rs").
     pub name: String,
@@ -63,6 +63,7 @@ pub fn build_tree(path: &Path) -> Result<FileSystemNode, std::io::Error> {
                 }
             }
         }
+        children.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(FileSystemNode {
             name,
@@ -76,5 +77,58 @@ pub fn build_tree(path: &Path) -> Result<FileSystemNode, std::io::Error> {
             size: metadata.len(),
             children: Vec::new(), 
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{File, create_dir_all};
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_build_tree() {
+        // Create a temporary directory for our test file structure.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Create a test directory structure:
+        // /
+        // |- a.txt (10 bytes)
+        // |- sub/
+        //    |- b.txt (20 bytes)
+        create_dir_all(root.join("sub")).unwrap();
+        let mut file_a = File::create(root.join("a.txt")).unwrap();
+        file_a.write_all(&[0; 10]).unwrap();
+        let mut file_b = File::create(root.join("sub").join("b.txt")).unwrap();
+        file_b.write_all(&[0; 20]).unwrap();
+
+        // The expected structure.
+        let expected = FileSystemNode {
+            name: root.file_name().unwrap().to_string_lossy().into_owned(),
+            size: 30,
+            children: vec![
+                FileSystemNode {
+                    name: "a.txt".to_string(),
+                    size: 10,
+                    children: vec![],
+                },
+                FileSystemNode {
+                    name: "sub".to_string(),
+                    size: 20,
+                    children: vec![
+                        FileSystemNode {
+                            name: "b.txt".to_string(),
+                            size: 20,
+                            children: vec![],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        let result = build_tree(root).unwrap();
+        assert_eq!(result, expected);
     }
 }

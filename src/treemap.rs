@@ -107,3 +107,59 @@ fn calculate_layout(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_treemap() {
+        // A simple file system tree for testing.
+        let tree = FileSystemNode {
+            name: "root".to_string(),
+            size: 60,
+            children: vec![
+                FileSystemNode { name: "a".to_string(), size: 30, children: vec![] },
+                FileSystemNode { name: "b".to_string(), size: 20, children: vec![] },
+                FileSystemNode { name: "c".to_string(), size: 10, children: vec![] },
+            ],
+        };
+
+        let bounds = Rectangle { x: 0.0, y: 0.0, width: 100.0, height: 100.0 };
+        let layout = generate_treemap(&tree, bounds);
+
+        // Expected layout:
+        // 'a' takes 50% of the width (30/60)
+        // 'b' takes 33.3% of the width (20/60)
+        // 'c' takes 16.6% of the width (10/60)
+        let expected_layout = vec![
+            TreemapNode {
+                rect: Rectangle { x: 0.0, y: 0.0, width: 50.0, height: 100.0 },
+                name: "a".to_string(),
+                size: 30,
+            },
+            TreemapNode {
+                rect: Rectangle { x: 50.0, y: 0.0, width: 100.0/3.0, height: 100.0 },
+                name: "b".to_string(),
+                size: 20,
+            },
+            TreemapNode {
+                rect: Rectangle { x: 50.0 + 100.0/3.0, y: 0.0, width: 100.0/6.0, height: 100.0 },
+                name: "c".to_string(),
+                size: 10,
+            },
+        ];
+        
+        // Custom comparison to handle floating point inaccuracies
+        assert_eq!(layout.len(), expected_layout.len());
+        for (i, node) in layout.iter().enumerate() {
+            let expected_node = &expected_layout[i];
+            assert_eq!(node.name, expected_node.name);
+            assert_eq!(node.size, expected_node.size);
+            assert!((node.rect.x - expected_node.rect.x).abs() < 1e-9);
+            assert!((node.rect.y - expected_node.rect.y).abs() < 1e-9);
+            assert!((node.rect.width - expected_node.rect.width).abs() < 1e-9);
+            assert!((node.rect.height - expected_node.rect.height).abs() < 1e-9);
+        }
+    }
+}
