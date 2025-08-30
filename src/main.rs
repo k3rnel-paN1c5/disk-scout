@@ -6,11 +6,11 @@ mod scanner;
 mod treemap;
 
 use eframe::egui;
+use scanner::FileSystemNode;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
-use treemap::{TreemapNode, Rectangle};
-use scanner::FileSystemNode;
+use treemap::{Rectangle, TreemapNode};
 
 /// The main application struct that holds the state of the GUI.
 struct DiskScannerApp {
@@ -27,6 +27,8 @@ struct DiskScannerApp {
     layout: Option<Vec<TreemapNode>>,
     /// The size of the last frame, used to detect window resizing.
     last_frame_size: egui::Vec2,
+    /// A stack to manage the zoom level. The last element is the current root.
+    navigation_stack: Vec<FileSystemNode>,
 }
 
 impl Default for DiskScannerApp {
@@ -41,21 +43,30 @@ impl Default for DiskScannerApp {
             scan_receiver: None, // No scan running at startup.
             layout: None,
             last_frame_size: egui::Vec2::ZERO,
+            navigation_stack: Vec::new(),
         }
     }
 }
 
-/// Generates a color from a predefined palette based on the depth.
+/// Generates a color by interpolating between two base colors based on depth.
 fn color_for_depth(depth: usize) -> egui::Color32 {
-    let colors = [
-        egui::Color32::from_rgb(2, 34, 63),   // Dark Blue
-        egui::Color32::from_rgb(2, 55, 99),   // Medium Blue
-        egui::Color32::from_rgb(2, 78, 138),  // Light Blue
-        egui::Color32::from_rgb(2, 102, 178), // Lighter Blue
-        egui::Color32::from_rgb(0, 128, 218), // Bright Blue
-        egui::Color32::from_rgb(0, 153, 255), // Brighter Blue
-    ];
-    colors[depth.saturating_sub(1) % colors.len()]
+    // Define a start and end color for the gradient.
+    let start_color = egui::Color32::from_rgb(2, 34, 63); // Dark Blue
+    let end_color = egui::Color32::from_rgb(0, 153, 255); // Bright Blue
+
+    // Determine how far to interpolate. We'll use a modulo operator
+    // to cycle the gradient for very deep trees, preventing it from
+    // getting stuck at the end_color.
+    let max_depth_for_gradient = 8; // Cycle the gradient every 8 levels.
+    let t = (depth.saturating_sub(1) % max_depth_for_gradient) as f32
+        / (max_depth_for_gradient - 1) as f32;
+
+    // Linear interpolation between the start and end colors.
+    egui::Color32::from_rgb(
+        (start_color.r() as f32 * (1.0 - t) + end_color.r() as f32 * t) as u8,
+        (start_color.g() as f32 * (1.0 - t) + end_color.g() as f32 * t) as u8,
+        (start_color.b() as f32 * (1.0 - t) + end_color.b() as f32 * t) as u8,
+    )
 }
 
 impl eframe::App for DiskScannerApp {
@@ -64,6 +75,10 @@ impl eframe::App for DiskScannerApp {
         // Check if there's a result from the scanning thread.
         if let Some(receiver) = &self.scan_receiver {
             if let Ok(result) = receiver.try_recv() {
+                if let Ok(tree) = &result {
+                    self.navigation_stack.clear();
+                    self.navigation_stack.push(tree.clone());
+                }
                 self.scan_result = Some(result);
                 self.scan_receiver = None; // We've received the result, so we can drop the receiver.
                 // Invalidate the old layout, a new one will be generated.
@@ -75,9 +90,19 @@ impl eframe::App for DiskScannerApp {
                 ui.label("Directory:");
                 ui.text_edit_singleline(&mut self.path_input);
 
+                // A "Browse" button to open a native file dialog.
+                if ui.button("Browse...").clicked() {
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        self.path_input = path.to_string_lossy().to_string();
+                    }
+                }
+
                 // Disable the scan button if a scan is already in progress.
                 let scan_in_progress = self.scan_receiver.is_some();
-                if ui.add_enabled(!scan_in_progress, egui::Button::new("Scan")).clicked() {
+                if ui
+                    .add_enabled(!scan_in_progress, egui::Button::new("Scan"))
+                    .clicked()
+                {
                     let (sender, receiver) = mpsc::channel();
                     self.scan_receiver = Some(receiver);
 
@@ -90,15 +115,42 @@ impl eframe::App for DiskScannerApp {
                     });
                 }
             });
+            
+            ui.horizontal(|ui| {
+                let mut truncate_to = None;
+                for (i, node) in self.navigation_stack.iter().enumerate() {
+                    if i > 0 {
+                        ui.label(">");
+                    }
+                    // Make the button text a bit shorter if it's too long
+                    let display_name = if node.name.len() > 30 {
+                        format!("{}...", &node.name[..27])
+                    } else {
+                        node.name.clone()
+                    };
+                    if ui.button(display_name).clicked() {
+                        truncate_to = Some(i + 1);
+                    }
+                }
+                if let Some(len) = truncate_to {
+                    if len < self.navigation_stack.len() {
+                        self.navigation_stack.truncate(len);
+                        self.layout = None; // Invalidate layout to trigger recalculation.
+                    }
+                }
+            });
         });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // Check if the window size has changed. If so, recalculate the layout.
             let current_frame_size = ui.available_size();
-            let layout_is_stale = self.last_frame_size != current_frame_size || (self.scan_result.is_some() && self.layout.is_none());
-            
+            let layout_is_stale = self.last_frame_size != current_frame_size
+                || (self.scan_result.is_some() && self.layout.is_none());
+
             if layout_is_stale {
-                if let Some(Ok(tree)) = &self.scan_result {
-                    println!("Window resized or new scan, recalculating layout...");
+                // Generate the layout from the current navigation root.
+                if let Some(tree) = self.navigation_stack.last() {
+                    println!("Window resized or new view, recalculating layout...");
                     let bounds = Rectangle {
                         x: 0.0,
                         y: 0.0,
@@ -110,7 +162,6 @@ impl eframe::App for DiskScannerApp {
                 self.last_frame_size = current_frame_size;
             }
 
-            // --- UI LOGIC: Based on Scan State ---
             if self.scan_receiver.is_some() {
                 ui.centered_and_justified(|ui| {
                     ui.label("Scanning...");
@@ -131,7 +182,10 @@ impl eframe::App for DiskScannerApp {
                 let painter = ui.painter();
                 let mut hovered_node: Option<&TreemapNode> = None;
 
-                for node in layout {
+                // Find the children of the current root to match against the layout nodes.
+                let current_children = &self.navigation_stack.last().unwrap().children;
+
+                for (i, node) in layout.iter().enumerate() {
                     let rect = egui::Rect::from_min_max(
                         egui::pos2(node.rect.x as f32, node.rect.y as f32),
                         egui::pos2(
@@ -146,16 +200,36 @@ impl eframe::App for DiskScannerApp {
                     }
 
                     painter.rect_filled(rect, 3.0, egui::Color32::from_gray(50));
-                    painter.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, egui::Color32::from_gray(150)));
+                    painter.rect_stroke(
+                        rect,
+                        3.0,
+                        egui::Stroke::new(1.0, egui::Color32::from_gray(150)),
+                    );
 
-                     let color = color_for_depth(node.depth);
+                    let color = color_for_depth(node.depth);
                     painter.rect_filled(rect, 3.0, color);
                     painter.rect_stroke(
                         rect,
                         3.0,
                         egui::Stroke::new(1.0, egui::Color32::from_gray(150)),
                     );
-                    
+
+                    // Handle clicks for zooming in.
+                    let response = ui.interact(rect, ui.id().with(i), egui::Sense::click());
+                    if response.clicked() {
+                        // Find the corresponding FileSystemNode for the clicked rectangle.
+                        if let Some(clicked_fs_node) =
+                            current_children.iter().find(|c| c.name == node.name)
+                        {
+                            // Only zoom into directories (nodes with children).
+                            if !clicked_fs_node.children.is_empty() {
+                                self.navigation_stack.push(clicked_fs_node.clone());
+                                self.layout = None; // Invalidate layout
+                                return; // Exit early to avoid issues with collection modification.
+                            }
+                        }
+                    }
+
                     // Check for hover to show a tooltip.
                     if ui.rect_contains_pointer(rect) {
                         hovered_node = Some(node);
@@ -177,12 +251,10 @@ impl eframe::App for DiskScannerApp {
             }
         });
 
-
         // Trigger a repaint. This is important for the resizing logic to work smoothly.
         ctx.request_repaint();
     }
 }
-
 
 /// The main entry point of the application.
 fn main() -> Result<(), eframe::Error> {
@@ -192,7 +264,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "Dis Scout",
+        "Disk Scout",
         options,
         Box::new(|_cc| Ok(Box::new(DiskScannerApp::default()))),
     )

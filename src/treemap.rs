@@ -60,7 +60,7 @@ fn calculate_layout(
     sorted_nodes.sort_by(|a, b| b.size.cmp(&a.size));
 
     // Calculate the total size of all nodes at this level.
-    let total_size = nodes.iter().map(|n| n.size).sum::<u64>() as f64;
+    let total_size = sorted_nodes.iter().map(|n| n.size).sum::<u64>() as f64;
     if total_size == 0.0 {
         return;
     }
@@ -69,7 +69,7 @@ fn calculate_layout(
     let mut current_x = bounds.x;
     let mut current_y = bounds.y;
 
-    for node in nodes {
+    for node in &sorted_nodes {
         // The proportion of the total size this node occupies.
         let proportion = node.size as f64 / total_size;
         let child_bounds;
