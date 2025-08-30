@@ -10,6 +10,7 @@ A visual disk space analyzer, built in Rust with `egui`. This tool scans a speci
   * **Treemap Visualization:** Displays the file system hierarchy as a set of nested rectangles, where the area of each rectangle is proportional to the size of the file or folder it represents.
   * **Interactive Tooltips:** Hover over any rectangle to see the name and size of the corresponding file or folder.
   * **Dynamic Resizing:** The treemap layout automatically adjusts to the window size, providing a responsive user experience.
+  * **UI Controls:** Allows you to specify a directory to scan at runtime using a text input field and a "Scan" button.
   * **Cross-Platform:** Built with Rust and `egui`, this application can be compiled and run on macOS, Windows, and Linux.
 
 ## Getting Started
@@ -47,7 +48,6 @@ The project's logic is separated into three main files within the `src/` directo
 
 This project is a solid foundation. Future improvements could include:
 
-  * **UI Controls:** Adding a text input and a "Scan" button to allow users to specify a directory to scan at runtime.
   * **Color Coding:** Assigning colors to rectangles based on file type or depth in the directory tree to make the visualization more informative.
   * **Click to Zoom:** Implementing functionality to click on a directory's rectangle to "zoom in" and view its contents as a new treemap.
   * **Background Scanning:** Moving the file system scan to a separate thread to prevent the UI from freezing while scanning large directories.
