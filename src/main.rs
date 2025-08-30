@@ -45,6 +45,19 @@ impl Default for DiskScannerApp {
     }
 }
 
+/// Generates a color from a predefined palette based on the depth.
+fn color_for_depth(depth: usize) -> egui::Color32 {
+    let colors = [
+        egui::Color32::from_rgb(2, 34, 63),   // Dark Blue
+        egui::Color32::from_rgb(2, 55, 99),   // Medium Blue
+        egui::Color32::from_rgb(2, 78, 138),  // Light Blue
+        egui::Color32::from_rgb(2, 102, 178), // Lighter Blue
+        egui::Color32::from_rgb(0, 128, 218), // Bright Blue
+        egui::Color32::from_rgb(0, 153, 255), // Brighter Blue
+    ];
+    colors[depth.saturating_sub(1) % colors.len()]
+}
+
 impl eframe::App for DiskScannerApp {
     /// This method is called once per frame and is responsible for all UI logic.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -135,6 +148,14 @@ impl eframe::App for DiskScannerApp {
                     painter.rect_filled(rect, 3.0, egui::Color32::from_gray(50));
                     painter.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, egui::Color32::from_gray(150)));
 
+                     let color = color_for_depth(node.depth);
+                    painter.rect_filled(rect, 3.0, color);
+                    painter.rect_stroke(
+                        rect,
+                        3.0,
+                        egui::Stroke::new(1.0, egui::Color32::from_gray(150)),
+                    );
+                    
                     // Check for hover to show a tooltip.
                     if ui.rect_contains_pointer(rect) {
                         hovered_node = Some(node);

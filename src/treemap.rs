@@ -21,6 +21,7 @@ pub struct TreemapNode {
     pub rect: Rectangle,
     pub name: String, 
     pub size: u64,
+    pub depth: usize,
 }
 
 /// Generates a treemap layout from a `FileSystemNode` tree.
@@ -36,7 +37,7 @@ pub struct TreemapNode {
 pub fn generate_treemap(node: &FileSystemNode, bounds: Rectangle) -> Vec<TreemapNode> {
     let mut results = Vec::new();
     // The recursive helper function does the main work.
-    calculate_layout(&node.children, bounds, &mut results, true);
+    calculate_layout(&node.children, bounds, &mut results, true, 1);
     results
 }
 
@@ -49,6 +50,7 @@ fn calculate_layout(
     bounds: Rectangle,
     results: &mut Vec<TreemapNode>,
     slice_vertically: bool,
+    depth: usize,
 ) {
     if nodes.is_empty() {
         return;
@@ -99,11 +101,12 @@ fn calculate_layout(
             rect: child_bounds,
             name: node.name.clone(),
             size: node.size,
+            depth,
         });
 
         // Recursively call for the children, flipping the slice direction.
         if !node.children.is_empty() {
-            calculate_layout(&node.children, child_bounds, results, !slice_vertically);
+            calculate_layout(&node.children, child_bounds, results, !slice_vertically, depth+1);
         }
     }
 }
@@ -120,7 +123,15 @@ mod tests {
             size: 60,
             children: vec![
                 FileSystemNode { name: "a".to_string(), size: 30, children: vec![] },
-                FileSystemNode { name: "b".to_string(), size: 20, children: vec![] },
+                FileSystemNode { 
+                    name: "b".to_string(), 
+                    size: 20, 
+                    children: vec![], //vec![FileSystemNode {
+                    //     name: "b1".to_string(),
+                    //     size: 20,
+                    //     children: vec![],
+                    // }], 
+                },
                 FileSystemNode { name: "c".to_string(), size: 10, children: vec![] },
             ],
         };
@@ -137,17 +148,25 @@ mod tests {
                 rect: Rectangle { x: 0.0, y: 0.0, width: 50.0, height: 100.0 },
                 name: "a".to_string(),
                 size: 30,
+                depth: 1,
             },
             TreemapNode {
                 rect: Rectangle { x: 50.0, y: 0.0, width: 100.0/3.0, height: 100.0 },
                 name: "b".to_string(),
                 size: 20,
+                depth: 1,
             },
             TreemapNode {
                 rect: Rectangle { x: 50.0 + 100.0/3.0, y: 0.0, width: 100.0/6.0, height: 100.0 },
                 name: "c".to_string(),
                 size: 10,
+                depth: 1,
             },
+        ];
+        let expected_depths = vec![
+            ("a", 1),
+            ("b", 1),
+            ("c", 1),
         ];
         
         // Custom comparison to handle floating point inaccuracies
@@ -160,6 +179,10 @@ mod tests {
             assert!((node.rect.y - expected_node.rect.y).abs() < 1e-9);
             assert!((node.rect.width - expected_node.rect.width).abs() < 1e-9);
             assert!((node.rect.height - expected_node.rect.height).abs() < 1e-9);
+        }
+        for (name, depth) in expected_depths {
+            let node = layout.iter().find(|n| n.name == name).unwrap();
+            assert_eq!(node.depth, depth);
         }
     }
 }
